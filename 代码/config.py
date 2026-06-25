@@ -36,6 +36,8 @@ class CrawlerConfig:
     output_formats: list[str] | None = None  # 默认 ["md"]
     output_dir: str | None = None
     dedup_enabled: bool = True
+    resume: bool = True
+    retry_failed: bool = True
     url_file: str | None = None
 
     def __post_init__(self):
@@ -75,6 +77,8 @@ def load_config(args: argparse.Namespace) -> CrawlerConfig:
     output_formats = config_dict.get("output", {}).get("formats")
     output_dir = config_dict.get("output", {}).get("dir")
     dedup_enabled = config_dict.get("dedup", {}).get("enabled", True)
+    resume_enabled = config_dict.get("resume", {}).get("enabled", True)
+    retry_failed = config_dict.get("resume", {}).get("retry_failed", True)
 
     # 3. CLI 参数覆盖（显式传入的才覆盖）
     if args.keyword:
@@ -92,6 +96,8 @@ def load_config(args: argparse.Namespace) -> CrawlerConfig:
         browser_mode = args.browser
     if getattr(args, "no_dedup", False):
         dedup_enabled = False
+    if getattr(args, "no_resume", False):
+        resume_enabled = False
     cli_fmt = getattr(args, "output_format", None)
     if cli_fmt:
         output_formats = [fmt.strip() for fmt in cli_fmt.split(",")]
@@ -106,6 +112,7 @@ def load_config(args: argparse.Namespace) -> CrawlerConfig:
         output_formats=output_formats,
         output_dir=output_dir,
         dedup_enabled=dedup_enabled,
+        resume=resume_enabled, retry_failed=retry_failed,
         url_file=url_file,
     )
 
