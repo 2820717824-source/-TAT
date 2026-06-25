@@ -118,6 +118,14 @@ class Fetcher:
                     return result
 
             result.content_markdown = self.converter.handle(result.content_html)
+
+            # 质量检查：标题和正文不能太空
+            if not self._quality_check(result):
+                result.status = "failed"
+                if not result.error_msg:
+                    result.error_msg = "内容质量过低"
+                return result
+
             result.status = "success"
 
         except requests.Timeout:
@@ -174,6 +182,13 @@ class Fetcher:
                     return result
 
             result.content_markdown = self.converter.handle(result.content_html)
+
+            if not self._quality_check(result):
+                result.status = "failed"
+                if not result.error_msg:
+                    result.error_msg = "内容质量过低"
+                return result
+
             result.status = "success"
 
         except ImportError:
@@ -194,6 +209,26 @@ class Fetcher:
         if any(sig in html for sig in spa_signals):
             return True
         return False
+
+    def _quality_check(self, result: FetchResult) -> bool:
+        """检查爬取结果是否有实际内容价值"""
+        # 标题不能为空或占位符
+        title = (result.title or "").strip()
+        bad_titles = {"", "[no-title]", "[no-author]", "无标题", "untitled"}
+        if title.lower() in bad_titles or len(title) < 3:
+            result.error_msg = result.error_msg or "标题无意义"
+            return False
+
+        # 正文 Markdown 有效内容不能太少
+        text = (result.content_markdown or "").strip()
+        # 去掉标题行、空行、链接行后计算有效字数
+        meaningful = sum(len(line.strip()) for line in text.split("\n")
+                         if line.strip() and not line.startswith("#") and not line.startswith(">"))
+        if meaningful < 100:
+            result.error_msg = result.error_msg or f"正文有效内容过少 ({meaningful}字)"
+            return False
+
+        return True
 
     def _fallback_extract(self, html: str) -> str:
         """降级方案：BeautifulSoup 取文本最多的区域"""
