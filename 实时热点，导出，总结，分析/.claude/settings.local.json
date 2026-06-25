@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mkdir -p \"C:/Users/24394/.claude/skills/prd-writer\")",
+      "Bash(cp \"D:/产品经理prdwriter/prd-writer-master/prd-writer-master/SKILL.md\" \"C:/Users/24394/.claude/skills/prd-writer/SKILL.md\")"
+    ]
+  }
+}

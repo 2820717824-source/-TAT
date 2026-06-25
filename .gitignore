@@ -1,5 +1,40 @@
+# Python
 __pycache__/
+*.py[cod]
 *.pyc
-.claude/
+*.egg-info/
+dist/
+build/
+
+# Crawler cache (any directory)
+.crawler_cache/
+
+# Output articles
+测试文章/
+文章/
+实时热点，导出，总结，分析/
+
+# Superpowers workflow
+.superpowers/
+
+# Other projects
 article-spider-main/
 *.zip
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Config with secrets
+config.yaml
+
+# Claude
+.claude/
+
+# Test files
+代码/test_urls.txt
+代码/donglingshu_urls.txt
