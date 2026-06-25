@@ -11,6 +11,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
+import hashlib
+
 
 class TaskLogger:
     """三流 JSONL 日志：request / error / summary"""
@@ -63,3 +65,66 @@ class TaskLogger:
             "keyword": keyword,
             **stats,
         })
+
+
+class ResumeState:
+    """失败恢复：记录已完成/失败的 URL，下次从断点续爬"""
+
+    def __init__(self, cache_dir: Path = Path(".crawler_cache")):
+        self.resume_dir = cache_dir / "resume"
+        self.resume_dir.mkdir(parents=True, exist_ok=True)
+        self.completed_file = self.resume_dir / "completed.txt"
+        self.failed_file = self.resume_dir / "failed.jsonl"
+        self._completed_cache: set[str] | None = None
+
+    def _url_key(self, url: str) -> str:
+        normalized = url.lower().rstrip("/")
+        return hashlib.sha256(normalized.encode()).hexdigest()
+
+    def _load_completed(self) -> set[str]:
+        if self._completed_cache is None:
+            seen: set[str] = set()
+            if self.completed_file.exists():
+                with open(self.completed_file, encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if line and len(line) == 64:
+                            seen.add(line)
+            self._completed_cache = seen
+        return self._completed_cache
+
+    def is_completed(self, url: str) -> bool:
+        return self._url_key(url) in self._load_completed()
+
+    def mark_completed(self, url: str) -> None:
+        key = self._url_key(url)
+        self._load_completed().add(key)
+        with open(self.completed_file, "a", encoding="utf-8") as f:
+            f.write(key + "\n")
+
+    def mark_failed(self, url: str, error: str) -> None:
+        record = {
+            "url": url,
+            "error": str(error)[:120],
+            "ts": datetime.now(timezone.utc).isoformat(),
+        }
+        with open(self.failed_file, "a", encoding="utf-8") as f:
+            f.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+    def get_failed(self) -> list[dict]:
+        if not self.failed_file.exists():
+            return []
+        records: list[dict] = []
+        with open(self.failed_file, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    try:
+                        records.append(json.loads(line))
+                    except json.JSONDecodeError:
+                        continue
+        return records
+
+    def clear_failed(self) -> None:
+        if self.failed_file.exists():
+            self.failed_file.unlink()
