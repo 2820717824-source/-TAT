@@ -5,7 +5,6 @@
 ## 项目结构
 
 ```
-代码/
 ├── hotspot_crawler.py    ← CLI 入口 + 降级路径
 ├── searcher.py           ← 搜索编排器（策略链模式）
 ├── sources/              ← 搜索源包

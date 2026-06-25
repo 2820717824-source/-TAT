@@ -11,21 +11,9 @@ build/
 
 # Output articles
 测试文章/
-文章/
-实时热点，导出，总结，分析/
-
-# Test crawl output under 代码/
-代码/验收/
-代码/验收测试/
-代码/冻零树/
-代码/镁信健康/
 
 # Superpowers workflow
 .superpowers/
-
-# Other projects
-代码/article-spider-main/
-*.zip
 
 # IDE
 .vscode/
@@ -40,7 +28,3 @@ config.yaml
 
 # Claude (any level)
 .claude/
-
-# Test files
-代码/test_urls.txt
-代码/donglingshu_urls.txt

@@ -49,7 +49,7 @@ class CrawlerConfig:
             self.output_formats = ["md"]
         if self.output_dir is None:
             # TODO: 项目完成后改为 ../文章
-            self.output_dir = str(Path(__file__).resolve().parent.parent / "测试文章")
+            self.output_dir = str(Path(__file__).resolve().parent / "测试文章")
         # 校验 source 名称（fail-fast）
         if _HAVE_SOURCES:
             validate_sources(self.sources)

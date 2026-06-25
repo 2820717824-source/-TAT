@@ -13,7 +13,6 @@
 import argparse
 import json
 import os
-import random
 import re
 import sys
 import time
@@ -22,7 +21,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
-from urllib.parse import quote, urlparse
+from urllib.parse import urlparse
 
 import html2text
 import requests
@@ -32,57 +31,35 @@ from readability import Document
 from rich.console import Console
 from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 
+# 搜索源模块
+from searcher import Searcher
+from sources import HotItem, default_headers, random_ua, REQUEST_TIMEOUT
+
+# 新模块（可选依赖）
+try:
+    from config import CrawlerConfig, load_config
+    from fetcher import Fetcher, FetchResult
+    _HAS_NEW_MODULES = True
+except ImportError:
+    _HAS_NEW_MODULES = False
+
+# 引擎模块（可选依赖）
+try:
+    from engine import CrawlerEngine, CrawlerReport
+    _HAS_ENGINE = True
+except ImportError:
+    _HAS_ENGINE = False
+
 # ============================================================
 # Console
 # ============================================================
 
 console = Console()
 
-# ============================================================
-# User-Agent 轮换池
-# ============================================================
-
-USER_AGENTS = [
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:120.0) Gecko/20100101 Firefox/120.0",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:120.0) Gecko/20100101 Firefox/120.0",
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
-]
-
-# ============================================================
-# 来源 URL 配置
-# ============================================================
-
-BAIDU_API_URL = "https://top.baidu.com/api/board?tab=realtime"
-ZHIHU_API_URL = "https://www.zhihu.com/api/v3/feed/topstory/hot-lists/total?limit=50"
-BING_SEARCH_URL = "https://cn.bing.com/search?q={keyword}&setlang=zh-Hans"
-REQUEST_TIMEOUT = 15
-
 
 # ============================================================
 # 工具函数
 # ============================================================
-
-def random_ua() -> str:
-    return random.choice(USER_AGENTS)
-
-
-def default_headers(referer: str = "") -> dict:
-    headers = {
-        "User-Agent": random_ua(),
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
-        "Accept-Encoding": "gzip, deflate, br",
-        "DNT": "1",
-        "Connection": "keep-alive",
-    }
-    if referer:
-        headers["Referer"] = referer
-    return headers
-
 
 def safe_filename(title: str, max_len: int = 40) -> str:
     """移除文件名中的非法字符，截断到 max_len"""
@@ -93,25 +70,9 @@ def safe_filename(title: str, max_len: int = 40) -> str:
     return safe
 
 
-def keyword_match(title: str, keyword: str) -> bool:
-    """检查标题是否包含行业关键词（不区分大小写）"""
-    return keyword.lower() in title.lower()
-
-
 # ============================================================
 # 数据类
 # ============================================================
-
-@dataclass
-class HotItem:
-    """单个热点条目"""
-    title: str
-    url: str
-    source: str          # 来源名称：百度热搜/知乎热榜/必应新闻
-    hot_score: str = ""  # 热度值
-    summary: str = ""    # 摘要
-    cover_url: str = ""  # 封面图
-
 
 @dataclass
 class ArticleResult:
@@ -130,309 +91,7 @@ class ArticleResult:
 
 
 # ============================================================
-# 搜索模块
-# ============================================================
-
-class HotSearcher:
-    """多源热点搜索"""
-
-    def __init__(self, keyword: str, max_per_source: int = 15, delay: float = 2.0):
-        self.keyword = keyword
-        self.max_per_source = max_per_source
-        self.delay = delay
-        self.session = requests.Session()
-
-    def _fetch(self, url: str, headers: dict = None, timeout: int = None) -> Optional[str]:
-        """通用 GET 请求"""
-        try:
-            resp = self.session.get(
-                url,
-                headers=headers or default_headers(),
-                timeout=timeout or REQUEST_TIMEOUT,
-            )
-            resp.raise_for_status()
-            # 自动检测编码
-            if resp.encoding and resp.encoding.lower() == "iso-8859-1":
-                resp.encoding = resp.apparent_encoding or "utf-8"
-            return resp.text
-        except requests.RequestException as e:
-            return None
-
-    def search_baidu(self) -> list[HotItem]:
-        """百度热搜榜爬取 + 关键词过滤"""
-        items = []
-        try:
-            html = self._fetch(BAIDU_API_URL, headers={
-                **default_headers("https://top.baidu.com/"),
-                "Accept": "application/json, text/plain, */*",
-            })
-            if not html:
-                console.print("  [dim]├[/dim]  [yellow][百度热搜][/yellow] 请求失败，尝试解析页面...")
-                return self._search_baidu_fallback()
-
-            data = json.loads(html)
-            cards = data.get("data", {}).get("cards", [])
-            for card in cards:
-                content_list = card.get("content", [])
-                for content in content_list:
-                    title = content.get("word", content.get("query", "")).strip()
-                    if not title:
-                        continue
-                    hot_score = str(content.get("hotScore", content.get("heatScore", "")))
-                    url = content.get("url", content.get("appUrl", f"https://www.baidu.com/s?wd={quote(title)}"))
-                    if self.keyword and not keyword_match(title, self.keyword):
-                        continue
-                    items.append(HotItem(
-                        title=title,
-                        url=url,
-                        source="百度热搜",
-                        hot_score=hot_score,
-                        summary=content.get("desc", ""),
-                    ))
-
-        except Exception as e:
-            console.print(f"  [dim]├[/dim]  [yellow][百度热搜][/yellow] 解析异常: {e}，尝试页面解析...")
-            return self._search_baidu_fallback()
-
-        # 按热度排序（降序）
-        items.sort(key=lambda x: int(x.hot_score) if x.hot_score.isdigit() else 0, reverse=True)
-        return items[:self.max_per_source]
-
-    def _search_baidu_fallback(self) -> list[HotItem]:
-        """备用方案：直接从热搜页面解析"""
-        items = []
-        try:
-            html = self._fetch("https://top.baidu.com/board?tab=realtime")
-            if not html:
-                return items
-            # 尝试从 script 标签中的 JSON 数据提取
-            soup = BeautifulSoup(html, "html.parser")
-            for script in soup.find_all("script"):
-                text = script.string or ""
-                if "hotSearch" not in text and "board" not in text:
-                    continue
-                # 尝试找完整 JSON 对象
-                for match in re.finditer(r'window\.__NUXT__\s*=\s*(\{.*?\})\s*;?\s*\n', text, re.DOTALL):
-                    try:
-                        data = json.loads(match.group(1))
-                        cards = data.get("data", {}).get("cards", [])
-                        for card in cards:
-                            for content in card.get("content", []):
-                                word = content.get("word", content.get("query", "")).strip()
-                                if not word:
-                                    continue
-                                if self.keyword and not keyword_match(word, self.keyword):
-                                    continue
-                                items.append(HotItem(
-                                    title=word,
-                                    url=content.get("url", f"https://www.baidu.com/s?wd={quote(word)}"),
-                                    source="百度热搜",
-                                    hot_score=str(content.get("hotScore", content.get("heatScore", ""))),
-                                ))
-                    except (json.JSONDecodeError, KeyError):
-                        pass
-                if items:
-                    break
-        except Exception:
-            console.print("  [dim]├[/dim]  [yellow][百度热搜][/yellow] 备用解析异常，跳过")
-
-        items.sort(key=lambda x: int(x.hot_score) if x.hot_score.isdigit() else 0, reverse=True)
-        return items[:self.max_per_source]
-
-    def search_zhihu(self) -> list[HotItem]:
-        """知乎热榜爬取 + 关键词过滤（API 需要 Cookie 时自动降级）"""
-        items = []
-        try:
-            headers = {
-                **default_headers("https://www.zhihu.com/"),
-                "Accept": "application/json, text/plain, */*",
-            }
-            html = self._fetch(ZHIHU_API_URL, headers=headers)
-            if not html:
-                console.print("  [dim]├[/dim]  [yellow][知乎热榜][/yellow] API 请求失败，尝试页面解析...")
-                return self._search_zhihu_fallback()
-
-            data = json.loads(html)
-            # API 返回 401 时 data 里是 error
-            if "error" in data:
-                console.print("  [dim]├[/dim]  [yellow][知乎热榜][/yellow] 需要登录验证，尝试页面解析...")
-                return self._search_zhihu_fallback()
-
-            detail_list = data.get("data", [])
-            for item in detail_list:
-                target = item.get("target", {})
-                title = target.get("title", "").strip()
-                if not title:
-                    title = target.get("question", {}).get("title", "")
-                if not title:
-                    continue
-                url_id = target.get("id", "")
-                url = f"https://www.zhihu.com/question/{url_id}" if url_id else ""
-                if not url:
-                    url = target.get("url", "")
-                detail = item.get("detail_text", "")
-                if self.keyword and not keyword_match(title, self.keyword):
-                    continue
-                items.append(HotItem(
-                    title=title,
-                    url=url,
-                    source="知乎热榜",
-                    hot_score=detail,
-                ))
-        except json.JSONDecodeError:
-            return self._search_zhihu_fallback()
-        except Exception as e:
-            console.print(f"  [dim]├[/dim]  [yellow][知乎热榜][/yellow] 解析异常: {e}")
-
-        items.sort(key=lambda x: int(x.hot_score) if x.hot_score.isdigit() else 0, reverse=True)
-        return items[:self.max_per_source]
-
-    def _search_zhihu_fallback(self) -> list[HotItem]:
-        """备用方案：从知乎热门内容页提取"""
-        items = []
-        try:
-            html = self._fetch("https://www.zhihu.com/explore", headers=default_headers("https://www.zhihu.com/"))
-            if not html:
-                return items
-            # 尝试从初始数据中找热门话题
-            match = re.search(r'<script id="js-initialData"[^>]*>({.*?})</script>', html, re.DOTALL)
-            if match:
-                data = json.loads(match.group(1))
-                entities = data.get("initialState", {}).get("entities", {})
-                # 查找热门问题
-                questions = entities.get("questions", {})
-                for qid, qdata in questions.items():
-                    title = qdata.get("title", "").strip()
-                    if not title:
-                        continue
-                    if self.keyword and not keyword_match(title, self.keyword):
-                        continue
-                    items.append(HotItem(
-                        title=title,
-                        url=f"https://www.zhihu.com/question/{qid}",
-                        source="知乎热榜",
-                    ))
-        except Exception:
-            console.print("  [dim]├[/dim]  [yellow][知乎热榜][/yellow] 备用解析异常，跳过")
-        return items[:self.max_per_source]
-
-    def search_bing(self) -> list[HotItem]:
-        """必应搜索 + 结果提取（使用 Web 搜索，因新闻搜索需验证）"""
-        items = []
-        try:
-            url = BING_SEARCH_URL.format(keyword=quote(self.keyword))
-            html = self._fetch(url, headers={
-                **default_headers("https://cn.bing.com/"),
-                "User-Agent": random_ua(),
-            })
-            if not html:
-                console.print("  [dim]├[/dim]  [yellow][必应搜索][/yellow] 请求失败")
-                return self._search_bing_fallback()
-
-            soup = BeautifulSoup(html, "html.parser")
-            # Bing Web 搜索结果
-            results = soup.select("#b_results .b_algo") or soup.select(".b_caption")
-            if not results:
-                return self._search_bing_fallback()
-
-            for result in results:
-                h2 = result.find("h2")
-                if not h2:
-                    continue
-                a = h2.find("a")
-                if not a:
-                    continue
-                title = a.get_text(strip=True)
-                href = a.get("href", "")
-                if not title or not href:
-                    continue
-                # 摘要
-                snippet_el = result.select_one(".b_caption p, .b_lineclamp2")
-                summary = snippet_el.get_text(strip=True) if snippet_el else ""
-
-                items.append(HotItem(
-                    title=title,
-                    url=href,
-                    source="必应搜索",
-                    summary=summary,
-                ))
-        except Exception as e:
-            console.print(f"  [dim]├[/dim]  [yellow][必应搜索][/yellow] 解析异常: {e}")
-
-        return items[:self.max_per_source]
-
-    def _search_bing_fallback(self) -> list[HotItem]:
-        """备用方案：通过百度搜索获取结果"""
-        # 当必应无法访问时，使用百度搜索作为补充
-        items = []
-        try:
-            search_url = f"https://www.baidu.com/s?wd={quote(self.keyword)}&tn=news"
-            html = self._fetch(search_url, headers=default_headers("https://www.baidu.com/"))
-            if not html:
-                return items
-            soup = BeautifulSoup(html, "html.parser")
-            for el in soup.select(".result, .c-container"):
-                title_el = el.select_one("h3 a") or el.select_one(".t a")
-                if not title_el:
-                    continue
-                title = title_el.get_text(strip=True)
-                href = title_el.get("href", "")
-                if not title or not href:
-                    continue
-                items.append(HotItem(
-                    title=title,
-                    url=href,
-                    source="百度搜索",
-                    summary="",
-                ))
-        except Exception:
-            console.print("  [dim]├[/dim]  [yellow][必应降级-百度搜索][/yellow] 备用解析异常，跳过")
-        return items[:self.max_per_source]
-
-    def search_all(self) -> list[HotItem]:
-        """执行所有来源搜索，返回去重合并后的结果"""
-        console.print(f"\n  [bold cyan]┌─ 正在搜索: 「{self.keyword}」[/bold cyan]")
-        console.print(f"  [bold cyan]│[/bold cyan]")
-
-        # 并行搜索三个来源
-        results = {}
-        sources = [
-            ("百度热搜", self.search_baidu),
-            ("知乎热榜", self.search_zhihu),
-            ("必应搜索", self.search_bing),
-        ]
-
-        for name, search_fn in sources:
-            try:
-                items = search_fn()
-                results[name] = items
-                emoji = "✓" if items else "–"
-                console.print(
-                    f"  [dim]├[/dim]  [{name}] 发现 [bold]{len(items)}[/bold] 条相关热点    [green]{emoji}[/green]"
-                )
-            except Exception as e:
-                results[name] = []
-                console.print(
-                    f"  [dim]├[/dim]  [{name}] 出错: {e}    [red]✗[/red]"
-                )
-            time.sleep(self.delay)
-
-        # 去重合并（按标题去重）
-        seen_titles = set()
-        merged: list[HotItem] = []
-        for name in sources:
-            for item in results.get(name[0], []):
-                if item.title not in seen_titles:
-                    seen_titles.add(item.title)
-                    merged.append(item)
-
-        console.print(f"  [dim]├[/dim]")
-        console.print(f"  [bold cyan]└[/bold cyan] 去重合并后: 共 [bold]{len(merged)}[/bold] 篇待爬取")
-        return merged
-
-
-# ============================================================
-# 正文爬取模块
+# 正文爬取模块（旧路径降级用）
 # ============================================================
 
 class ArticleCrawler:
@@ -549,7 +208,7 @@ class ArticleCrawler:
 
 
 # ============================================================
-# 文件存储模块
+# 文件存储模块（旧路径降级用）
 # ============================================================
 
 class ArticleSaver:
@@ -680,10 +339,22 @@ def print_report(results: list[ArticleResult], keyword: str, elapsed: float, out
         console.print(f"\n  [yellow]失败详情:[/yellow]")
         for r in results:
             if r.status == "failed":
-                console.print(f"    [dim]✗[/dim] {r.title[:50]} — [red]{r.error_msg}[/red]")
+                console.print(f"    [dim]x[/dim] {r.title[:50]} — [red]{r.error_msg}[/red]")
 
 
-def run_pipeline(keyword: str, max_per_source: int = 15, delay: float = 2.0, url_file: str = None):
+def run_pipeline(
+    keyword: str,
+    max_per_source: int = 15,
+    delay: float = 2.0,
+    url_file: str = None,
+    browser_mode: str = "auto",
+    no_dedup: bool = False,
+    resume: bool = True,
+    retry_failed: bool = True,
+    output_formats: list[str] | None = None,
+    output_dir: str | None = None,
+    source_configs: dict[str, dict] | None = None,
+):
     """执行完整爬取流水线"""
     start_time = time.time()
     print_banner()
@@ -710,7 +381,8 @@ def run_pipeline(keyword: str, max_per_source: int = 15, delay: float = 2.0, url
                     hot_items.append(HotItem(title=url, url=url, source="手动输入"))
         console.print(f"  [dim]├[/dim]  从文件读取 [bold]{len(hot_items)}[/bold] 条 URL")
     else:
-        searcher = HotSearcher(keyword, max_per_source, delay)
+        searcher = Searcher(keyword, max_per_source=max_per_source, delay=delay,
+                              source_configs=source_configs)
         hot_items = searcher.search_all()
 
     if not hot_items:
@@ -719,61 +391,153 @@ def run_pipeline(keyword: str, max_per_source: int = 15, delay: float = 2.0, url
         return
 
     # Step 2: 爬取正文
-    crawler = ArticleCrawler(delay)
-    saver = ArticleSaver(keyword)
-    results: list[ArticleResult] = []
+    if _HAS_NEW_MODULES and _HAS_ENGINE:
+        # 使用 CrawlerEngine 全流程编排
+        from config import CrawlerConfig
+        from engine import CrawlerEngine
+        cfg = CrawlerConfig(
+            keyword=keyword,
+            max_per_source=max_per_source,
+            delay=delay,
+            browser_mode=browser_mode,
+            output_formats=output_formats or ["md"],
+            dedup_enabled=not no_dedup,
+            resume=resume,
+            retry_failed=retry_failed,
+            output_dir=output_dir,
+        )
+        engine = CrawlerEngine(cfg)
+        report = engine.run(hot_items)
+        # 用 report 打印结果
+        console.print(f"\n  [bold green]爬取完成! 成功: {report.success}, 失败: {report.failed}, 去重跳过: {report.deduped}[/bold green]")
+        console.print(f"  [dim]保存路径: {report.output_dir}[/dim]")
+        console.print(f"  [dim]用时: {report.elapsed:.1f}秒[/dim]")
+        if report.failed > 0:
+            console.print(f"  [yellow]引擎报告有 {report.failed} 篇失败，详情见引擎日志[/yellow]")
+    else:
+        saver = ArticleSaver(keyword)
+        results: list = []
 
-    console.print(f"\n  [bold cyan]┌─ 正在爬取文章正文 [/bold cyan]")
-    console.print(f"  [bold cyan]│[/bold cyan]")
+        console.print(f"\n  [bold cyan]┌─ 正在爬取文章正文 [/bold cyan]")
+        console.print(f"  [bold cyan]│[/bold cyan]")
 
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(),
-        TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-        TimeElapsedColumn(),
-        console=console,
-    ) as progress:
-        task = progress.add_task(f"[cyan]爬取中...", total=len(hot_items))
+        # 选择爬取引擎
+        if _HAS_NEW_MODULES and browser_mode != "never":
+            from config import CrawlerConfig
+            from fetcher import Fetcher
+            cfg = CrawlerConfig(
+                keyword=keyword,
+                max_per_source=max_per_source,
+                delay=delay,
+                browser_mode=browser_mode,
+                url_file=url_file,
+            )
+            fetcher = Fetcher(cfg)
+        else:
+            crawler = ArticleCrawler(delay)
 
-        for i, item in enumerate(hot_items, 1):
-            result = crawler.crawl(item)
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+            TimeElapsedColumn(),
+            console=console,
+        ) as progress:
+            task = progress.add_task(f"[cyan]爬取中...", total=len(hot_items))
 
-            if result.status == "success":
-                fpath = saver.save(result, i)
-                progress.console.print(
-                    f"  [dim]├[/dim]  [{i}/{len(hot_items)}] {result.title[:50]}"
-                )
-                progress.console.print(
-                    f"  [dim]│[/dim]          → [green]✓ 已保存 ({result.crawl_time:.1f}s)[/green]"
-                )
-            else:
-                fpath = saver.save(result, i)
-                progress.console.print(
-                    f"  [dim]├[/dim]  [{i}/{len(hot_items)}] {result.title[:50]}"
-                )
-                progress.console.print(
-                    f"  [dim]│[/dim]          → [red]✗ {result.error_msg}[/red]"
-                )
+            for i, item in enumerate(hot_items, 1):
+                if _HAS_NEW_MODULES and browser_mode != "never":
+                    result = fetcher.fetch(item.url, source=item.source, summary=item.summary)
+                else:
+                    result = crawler.crawl(item)
 
-            results.append(result)
-            progress.advance(task)
+                if result.status == "success":
+                    fpath = saver.save(result, i)
+                    progress.console.print(
+                        f"  [dim]├[/dim]  [{i}/{len(hot_items)}] {result.title[:50]}"
+                    )
+                    progress.console.print(
+                        f"  [dim]│[/dim]          [green]OK 已保存 ({result.crawl_time:.1f}s)[/green]"
+                    )
+                else:
+                    fpath = saver.save(result, i)
+                    progress.console.print(
+                        f"  [dim]├[/dim]  [{i}/{len(hot_items)}] {result.title[:50]}"
+                    )
+                    progress.console.print(
+                        f"  [dim]│[/dim]          [red]x {result.error_msg}[/red]"
+                    )
 
-            if i < len(hot_items):
-                time.sleep(delay)
+                results.append(result)
+                progress.advance(task)
 
-        # 确保进度条到100%
-        progress.update(task, completed=len(hot_items))
+                if i < len(hot_items):
+                    time.sleep(delay)
 
-    console.print(f"  [bold cyan]└──────────────────────────────────────────────────────[/bold cyan]")
+            # 确保进度条到100%
+            progress.update(task, completed=len(hot_items))
 
-    # Step 3: 生成汇总
-    summary_path = saver.save_summary(results)
-    console.print(f"\n  [dim]汇总文件: {summary_path}[/dim]")
+        console.print(f"  [bold cyan]└──────────────────────────────────────────────────────[/bold cyan]")
 
-    # Step 4: 报告
-    elapsed = time.time() - start_time
-    print_report(results, keyword, elapsed, str(saver.output_dir))
+        # Step 3: 生成汇总
+        summary_path = saver.save_summary(results)
+        console.print(f"\n  [dim]汇总文件: {summary_path}[/dim]")
+
+        # Step 4: 报告
+        elapsed = time.time() - start_time
+        print_report(results, keyword, elapsed, str(saver.output_dir))
+
+
+# ============================================================
+# Login 流程
+# ============================================================
+
+def _login_zhihu():
+    """打开 Playwright 浏览器让用户扫码登录知乎，自动提取 Cookie"""
+    console.print("  [cyan]正在打开知乎登录页...[/cyan]")
+    console.print("  [yellow]请用手机知乎 App 扫码登录[/yellow]")
+    console.print("  [dim]等待登录中（最长 3 分钟）...[/dim]")
+
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        console.print("  [red]Playwright 未安装，请运行: pip install playwright && playwright install chromium[/red]")
+        sys.exit(1)
+
+    from cookie_manager import CookieManager
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch(
+            headless=False,
+            args=['--disable-blink-features=AutomationControlled'],
+        )
+        context = browser.new_context(
+            viewport={'width': 1280, 'height': 800},
+            locale='zh-CN',
+            timezone_id='Asia/Shanghai',
+        )
+        page = context.new_page()
+        page.goto("https://www.zhihu.com/signin", wait_until="networkidle")
+
+        import time
+        for _ in range(180):
+            time.sleep(1)
+            cookies = context.cookies()
+            has_login = any(
+                c["name"] in ("z_c0", "sessionid", "login")
+                and "zhihu" in c["domain"]
+                for c in cookies
+            )
+            if has_login:
+                cookie_str = "; ".join(f'{c["name"]}={c["value"]}' for c in cookies)
+                CookieManager().save("zhihu", cookie_str)
+                console.print(f"  [green]登录成功！Cookie 已保存[/green]")
+                browser.close()
+                return
+
+        console.print("  [red]登录超时（3 分钟），请重试[/red]")
+        browser.close()
 
 
 # ============================================================
@@ -787,17 +551,60 @@ def main():
         epilog="""
 示例:
   python hotspot_crawler.py 健康
+  python hotspot_crawler.py --login zhihu
   python hotspot_crawler.py 人工智能 --max 10 --delay 3
   python hotspot_crawler.py 科技 --url-file urls.txt
         """,
     )
-    parser.add_argument("keyword", help="行业关键词，如：健康、科技、教育")
+    parser.add_argument("keyword", nargs="?", default="", help="行业关键词，如：健康、科技、教育")
     parser.add_argument("--max", type=int, default=15, help="每源最多取 N 条（默认：15）")
     parser.add_argument("--delay", type=float, default=2.0, help="请求间隔秒数（默认：2.0，推荐 >= 1.0）")
     parser.add_argument("--url-file", type=str, default=None,
                         help="跳过搜索，从文件读取 URL（每行一条，支持 # 注释）")
+    parser.add_argument(
+        "--browser", choices=["auto", "always", "never"], default="auto",
+        help="浏览器渲染模式: auto=智能降级, always=强制浏览器, never=禁用(默认: auto)",
+    )
+    parser.add_argument(
+        "--config", type=str, default=None,
+        help="YAML 配置文件路径（CLI 参数会覆盖配置文件中对应的值）",
+    )
+    parser.add_argument(
+        "--no-dedup", action="store_true",
+        help="禁用内容去重",
+    )
+    parser.add_argument(
+        "--resume", action="store_true", default=None,
+        help="启用断点续爬（默认: auto，检测到失败记录时自动启用）",
+    )
+    parser.add_argument(
+        "--no-resume", action="store_true", default=None,
+        help="禁用断点续爬",
+    )
+    parser.add_argument(
+        "--retry-failed", action="store_true", default=None,
+        help="重试上次失败的 URL（默认: True，仅 --resume 时生效）",
+    )
+    parser.add_argument(
+        "--no-retry-failed", action="store_true", default=None,
+        help="不重试上次失败的 URL",
+    )
+    parser.add_argument(
+        "--output-format", type=str, default=None,
+        help="输出格式: md/jsonl/csv (多个用逗号分隔，如: md,jsonl)",
+    )
+    parser.add_argument(
+        "--login", type=str, default=None,
+        choices=["zhihu"],
+        help="登录指定平台并保存 Cookie（当前支持: zhihu）",
+    )
 
     args = parser.parse_args()
+
+    if args.login:
+        if args.login == "zhihu":
+            _login_zhihu()
+        sys.exit(0)
 
     if not args.keyword.strip():
         parser.print_help()
@@ -807,12 +614,29 @@ def main():
         console.print("[red]--delay 不能为负数[/red]")
         sys.exit(1)
 
+    # Parse output formats
+    if args.output_format:
+        output_formats = [fmt.strip() for fmt in args.output_format.split(",")]
+    else:
+        output_formats = ["md"]
+
+    no_dedup = args.no_dedup
+    resume = not args.no_resume if args.no_resume else (args.resume if args.resume is not None else True)
+    retry_failed = not args.no_retry_failed if args.no_retry_failed else (args.retry_failed if args.retry_failed is not None else True)
+    output_dir = None  # or from config
+
     try:
         run_pipeline(
             keyword=args.keyword.strip(),
             max_per_source=args.max,
             delay=args.delay,
             url_file=args.url_file,
+            browser_mode=args.browser,
+            no_dedup=no_dedup,
+            resume=resume,
+            retry_failed=retry_failed,
+            output_formats=output_formats,
+            output_dir=output_dir,
         )
     except KeyboardInterrupt:
         console.print("\n  [yellow]用户中断，爬取结束[/yellow]")
