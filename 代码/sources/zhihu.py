@@ -21,6 +21,7 @@ from . import (
     keyword_match,
     register_source,
 )
+from cookie_manager import CookieManager
 
 ZHIHU_API_URL = "https://www.zhihu.com/api/v3/feed/topstory/hot-lists/total?limit=50"
 
@@ -32,7 +33,9 @@ class ZhihuHotSource(SearchSource):
     _no_cookie_warned = False
 
     def search(self, keyword: str, max_results: int = 15) -> list[HotItem]:
-        cookie = self.config.get("cookie", "")
+        # 优先用 --login 缓存的 Cookie，其次用 config 配置
+        cm = CookieManager()
+        cookie = cm.get_cookie_str("zhihu") or self.config.get("cookie", "")
         items = []
 
         if not cookie:
