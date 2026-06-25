@@ -138,6 +138,10 @@ def save_default_config(path: str = "config.yaml"):
         "dedup": {
             "enabled": True,
         },
+        "resume": {
+            "enabled": True,
+            "retry_failed": True,
+        },
         "output": {
             "formats": ["md"],
             "dir": "../测试文章",

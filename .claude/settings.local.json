@@ -43,8 +43,21 @@
       "Bash(git add *)",
       "Bash(git commit -m ' *)",
       "Bash(git commit --amend -m ' *)",
+<<<<<<< HEAD
       "Bash(git rebase *)",
       "Bash(GIT_EDITOR=true git rebase --continue)"
+=======
+      "Bash(mkdir -p \"C:/Users/24394/Desktop/爬虫热点/.superpowers/sdd\")",
+      "Bash(echo \"# SDD Progress Ledger\")",
+      "Bash(echo \"BASE: $\\(cd 'C:/Users/24394/Desktop/爬虫热点' && git rev-parse HEAD\\)\")",
+      "Bash(git commit *)",
+      "Bash(rm -rf \".crawler_cache\")",
+      "Bash(PYTHONIOENCODING=utf-8 python hotspot_crawler.py 测试 --max 1 --delay 1 --browser never)",
+      "Bash(PYTHONIOENCODING=utf-8 python hotspot_crawler.py 科技 --max 2 --delay 1 --browser never)",
+      "Bash(PYTHONIOENCODING=utf-8 python hotspot_crawler.py 科技 --max 2 --delay 1 --browser never --no-resume)",
+      "Bash(PYTHONIOENCODING=utf-8 python hotspot_crawler.py 科技 --url-file test_urls.txt --delay 1 --browser never)",
+      "Bash(PYTHONIOENCODING=utf-8 python hotspot_crawler.py 科技 --url-file test_urls.txt --delay 1 --browser never --no-resume)"
+>>>>>>> 9cbde15 (fix: address code review findings)
     ]
   }
 }

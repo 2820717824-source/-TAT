@@ -61,7 +61,9 @@ class CrawlerEngine:
         # 失败恢复：优先重试上次失败的
         if self.resume_state:
             failed_items = self.resume_state.get_failed()
-            if failed_items:
+            # 先清空失败记录，本轮新产生的失败会重新记录
+            self.resume_state.clear_failed()
+            if failed_items and self.config.retry_failed:
                 console.print(f"  [yellow]发现 {len(failed_items)} 条上次失败的记录，优先重试...[/yellow]")
                 fake_items = [
                     HotItem(title=rec.get("url", "").rsplit("/", 1)[-1][:30], url=rec["url"], source="resume")
@@ -111,8 +113,6 @@ class CrawlerEngine:
             remaining = self.resume_state.get_failed()
             if remaining:
                 console.print(f"  [yellow]仍有 {len(remaining)} 条失败，可在下次运行时继续重试[/yellow]")
-            else:
-                self.resume_state.clear_failed()
 
         self.logger.log_summary(self.config.keyword, {
             "total": report.total,

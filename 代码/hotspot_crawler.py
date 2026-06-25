@@ -350,6 +350,7 @@ def run_pipeline(
     browser_mode: str = "auto",
     no_dedup: bool = False,
     resume: bool = True,
+    retry_failed: bool = True,
     output_formats: list[str] | None = None,
     output_dir: str | None = None,
     source_configs: dict[str, dict] | None = None,
@@ -402,6 +403,7 @@ def run_pipeline(
             output_formats=output_formats or ["md"],
             dedup_enabled=not no_dedup,
             resume=resume,
+            retry_failed=retry_failed,
             output_dir=output_dir,
         )
         engine = CrawlerEngine(cfg)
@@ -528,6 +530,14 @@ def main():
         help="禁用断点续爬",
     )
     parser.add_argument(
+        "--retry-failed", action="store_true", default=None,
+        help="重试上次失败的 URL（默认: True，仅 --resume 时生效）",
+    )
+    parser.add_argument(
+        "--no-retry-failed", action="store_true", default=None,
+        help="不重试上次失败的 URL",
+    )
+    parser.add_argument(
         "--output-format", type=str, default=None,
         help="输出格式: md/jsonl/csv (多个用逗号分隔，如: md,jsonl)",
     )
@@ -550,6 +560,7 @@ def main():
 
     no_dedup = args.no_dedup
     resume = not args.no_resume if args.no_resume else (args.resume if args.resume is not None else True)
+    retry_failed = not args.no_retry_failed if args.no_retry_failed else (args.retry_failed if args.retry_failed is not None else True)
     output_dir = None  # or from config
 
     try:
@@ -561,6 +572,7 @@ def main():
             browser_mode=args.browser,
             no_dedup=no_dedup,
             resume=resume,
+            retry_failed=retry_failed,
             output_formats=output_formats,
             output_dir=output_dir,
         )
