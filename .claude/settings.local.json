@@ -1,63 +1,11 @@
 {
   "permissions": {
     "allow": [
-      "Bash(.venv/Scripts/python -m pip list)",
-      "Bash(.venv/Scripts/python.exe -c ' *)",
-      "Bash(.venv/Scripts/python.exe -m pip install trafilatura -q)",
-      "Bash(uv --version)",
-      "Bash(uv add *)",
-      "Bash(uv run *)",
-      "Bash(bash *)",
-      "Bash(python -c \"import yaml; print\\('PyYAML version:', yaml.__version__\\)\")",
-      "Bash(python -c \"from browser_fetcher import BrowserFetcher; print\\('Import OK'\\); print\\('Class:', BrowserFetcher\\); bf = BrowserFetcher\\(\\); print\\('Instance:', bf\\); print\\('headless:', bf.headless\\); print\\('timeout:', bf.timeout\\); print\\('Has fetch:', callable\\(bf.fetch\\)\\); print\\('Has _run_actions:', callable\\(bf._run_actions\\)\\)\")",
-      "Bash(python -c \"import ast; ast.parse\\(open\\('fetcher.py', encoding='utf-8'\\).read\\(\\)\\); print\\('Syntax OK'\\)\")",
-      "Bash(python -c \"from fetcher import Fetcher, FetchResult; print\\('Import OK'\\)\")",
-      "Bash(python -c \"import py_compile; py_compile.compile\\('hotspot_crawler.py', doraise=True\\)\")",
-      "Bash(python -c \"from config import CrawlerConfig, load_config; from fetcher import Fetcher, FetchResult; print\\('Module imports OK'\\); print\\('FetchResult fields:', [f for f in dir\\(FetchResult\\) if not f.startswith\\('_'\\)]\\)\")",
-      "Bash(python -c ' *)",
-      "Bash(timeout 120 python hotspot_crawler.py 冻零树 --browser auto --max 3)",
-      "Bash(python -c \"from storage import ArticleSaverV2, StorageResult; print\\('Import OK'\\); print\\('ArticleSaverV2:', ArticleSaverV2\\); print\\('StorageResult:', StorageResult\\)\")",
-      "Bash(python -c \"import ast; ast.parse\\(open\\('engine.py', encoding='utf-8'\\).read\\(\\)\\); print\\('Syntax OK'\\)\")",
-      "Bash(python -c \"from engine import CrawlerEngine, CrawlerReport; print\\('Import OK'\\); print\\('CrawlerReport fields:', [f.name for f in __import__\\('dataclasses'\\).fields\\(CrawlerReport\\)]\\)\")",
-      "Bash(python *)",
-      "Bash(cd /tmp)",
-      "Bash(ls -la /tmp)",
-      "Bash(mkdir -p \"C:/Users/24394/Desktop/爬虫热点/代码/sources\")",
-      "Bash(touch \"C:/Users/24394/Desktop/爬虫热点/代码/sources/__init__.py\")",
-      "Bash(timeout 35 python hotspot_crawler.py verify_final --url-file test_urls.txt --delay 0 --browser never)",
-      "Bash(echo \"EXIT: $?\")",
-      "Bash(echo \"https://finance.sina.com.cn/china/\")",
-      "Bash(timeout 30 python hotspot_crawler.py test_simple --url-file /tmp/test_url.txt --delay 0 --browser never)",
-      "Bash(rm -rf .crawler_cache verify_final)",
-      "Bash(timeout 90 python hotspot_crawler.py verify_final --url-file test_urls.txt --delay 0 --browser never)",
-      "Bash(echo \"---EXIT: $?---\")",
-      "Bash(tee /tmp/crawler_debug.txt)",
-      "Bash(grep -v '^\\\\s*$')",
-      "Bash(find \"C:/Users/24394/Desktop/爬虫热点/代码/verify\"* -type d)",
-      "Bash(PYTHONIOENCODING=utf-8 timeout 90 python hotspot_crawler.py verify_final --url-file test_urls.txt --delay 0 --browser never)",
-      "Bash(echo \"EXIT_CODE=$?\")",
-      "Bash(rm -rf .crawler_cache)",
-      "Bash(PYTHONIOENCODING=utf-8 timeout 30 python hotspot_crawler.py 测试 --max 1 --delay 1 --browser never)",
-      "Bash(pip install *)",
-      "Bash(git init *)",
-      "Bash(git add *)",
-      "Bash(git commit -m ' *)",
-      "Bash(git commit --amend -m ' *)",
-<<<<<<< HEAD
       "Bash(git rebase *)",
-      "Bash(GIT_EDITOR=true git rebase --continue)"
-=======
-      "Bash(mkdir -p \"C:/Users/24394/Desktop/爬虫热点/.superpowers/sdd\")",
-      "Bash(echo \"# SDD Progress Ledger\")",
-      "Bash(echo \"BASE: $\\(cd 'C:/Users/24394/Desktop/爬虫热点' && git rev-parse HEAD\\)\")",
-      "Bash(git commit *)",
-      "Bash(rm -rf \".crawler_cache\")",
-      "Bash(PYTHONIOENCODING=utf-8 python hotspot_crawler.py 测试 --max 1 --delay 1 --browser never)",
-      "Bash(PYTHONIOENCODING=utf-8 python hotspot_crawler.py 科技 --max 2 --delay 1 --browser never)",
-      "Bash(PYTHONIOENCODING=utf-8 python hotspot_crawler.py 科技 --max 2 --delay 1 --browser never --no-resume)",
-      "Bash(PYTHONIOENCODING=utf-8 python hotspot_crawler.py 科技 --url-file test_urls.txt --delay 1 --browser never)",
-      "Bash(PYTHONIOENCODING=utf-8 python hotspot_crawler.py 科技 --url-file test_urls.txt --delay 1 --browser never --no-resume)"
->>>>>>> 9cbde15 (fix: address code review findings)
+      "Bash(git checkout *)",
+      "Bash(rm -f \"代码/donglingshu_urls.txt\")",
+      "Bash(git stash *)",
+      "Bash(git pull *)"
     ]
   }
 }
