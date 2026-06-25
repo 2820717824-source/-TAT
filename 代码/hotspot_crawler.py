@@ -349,6 +349,7 @@ def run_pipeline(
     url_file: str = None,
     browser_mode: str = "auto",
     no_dedup: bool = False,
+    resume: bool = True,
     output_formats: list[str] | None = None,
     output_dir: str | None = None,
     source_configs: dict[str, dict] | None = None,
@@ -400,6 +401,7 @@ def run_pipeline(
             browser_mode=browser_mode,
             output_formats=output_formats or ["md"],
             dedup_enabled=not no_dedup,
+            resume=resume,
             output_dir=output_dir,
         )
         engine = CrawlerEngine(cfg)
@@ -518,6 +520,14 @@ def main():
         help="禁用内容去重",
     )
     parser.add_argument(
+        "--resume", action="store_true", default=None,
+        help="启用断点续爬（默认: auto，检测到失败记录时自动启用）",
+    )
+    parser.add_argument(
+        "--no-resume", action="store_true", default=None,
+        help="禁用断点续爬",
+    )
+    parser.add_argument(
         "--output-format", type=str, default=None,
         help="输出格式: md/jsonl/csv (多个用逗号分隔，如: md,jsonl)",
     )
@@ -539,6 +549,7 @@ def main():
         output_formats = ["md"]
 
     no_dedup = args.no_dedup
+    resume = not args.no_resume if args.no_resume else (args.resume if args.resume is not None else True)
     output_dir = None  # or from config
 
     try:
@@ -549,6 +560,7 @@ def main():
             url_file=args.url_file,
             browser_mode=args.browser,
             no_dedup=no_dedup,
+            resume=resume,
             output_formats=output_formats,
             output_dir=output_dir,
         )
