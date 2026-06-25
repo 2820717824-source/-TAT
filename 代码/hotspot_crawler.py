@@ -490,6 +490,57 @@ def run_pipeline(
 
 
 # ============================================================
+# Login 流程
+# ============================================================
+
+def _login_zhihu():
+    """打开 Playwright 浏览器让用户扫码登录知乎，自动提取 Cookie"""
+    console.print("  [cyan]正在打开知乎登录页...[/cyan]")
+    console.print("  [yellow]请用手机知乎 App 扫码登录[/yellow]")
+    console.print("  [dim]等待登录中（最长 3 分钟）...[/dim]")
+
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        console.print("  [red]Playwright 未安装，请运行: pip install playwright && playwright install chromium[/red]")
+        sys.exit(1)
+
+    from cookie_manager import CookieManager
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch(
+            headless=False,
+            args=['--disable-blink-features=AutomationControlled'],
+        )
+        context = browser.new_context(
+            viewport={'width': 1280, 'height': 800},
+            locale='zh-CN',
+            timezone_id='Asia/Shanghai',
+        )
+        page = context.new_page()
+        page.goto("https://www.zhihu.com/signin", wait_until="networkidle")
+
+        import time
+        for _ in range(180):
+            time.sleep(1)
+            cookies = context.cookies()
+            has_login = any(
+                c["name"] in ("z_c0", "sessionid", "login")
+                and "zhihu" in c["domain"]
+                for c in cookies
+            )
+            if has_login:
+                cookie_str = "; ".join(f'{c["name"]}={c["value"]}' for c in cookies)
+                CookieManager().save("zhihu", cookie_str)
+                console.print(f"  [green]登录成功！Cookie 已保存[/green]")
+                browser.close()
+                return
+
+        console.print("  [red]登录超时（3 分钟），请重试[/red]")
+        browser.close()
+
+
+# ============================================================
 # CLI 入口
 # ============================================================
 
@@ -500,11 +551,12 @@ def main():
         epilog="""
 示例:
   python hotspot_crawler.py 健康
+  python hotspot_crawler.py --login zhihu
   python hotspot_crawler.py 人工智能 --max 10 --delay 3
   python hotspot_crawler.py 科技 --url-file urls.txt
         """,
     )
-    parser.add_argument("keyword", help="行业关键词，如：健康、科技、教育")
+    parser.add_argument("keyword", nargs="?", default="", help="行业关键词，如：健康、科技、教育")
     parser.add_argument("--max", type=int, default=15, help="每源最多取 N 条（默认：15）")
     parser.add_argument("--delay", type=float, default=2.0, help="请求间隔秒数（默认：2.0，推荐 >= 1.0）")
     parser.add_argument("--url-file", type=str, default=None,
@@ -541,8 +593,18 @@ def main():
         "--output-format", type=str, default=None,
         help="输出格式: md/jsonl/csv (多个用逗号分隔，如: md,jsonl)",
     )
+    parser.add_argument(
+        "--login", type=str, default=None,
+        choices=["zhihu"],
+        help="登录指定平台并保存 Cookie（当前支持: zhihu）",
+    )
 
     args = parser.parse_args()
+
+    if args.login:
+        if args.login == "zhihu":
+            _login_zhihu()
+        sys.exit(0)
 
     if not args.keyword.strip():
         parser.print_help()
