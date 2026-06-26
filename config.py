@@ -49,8 +49,7 @@ class CrawlerConfig:
         if self.output_formats is None:
             self.output_formats = ["md"]
         if self.output_dir is None:
-            # TODO: 项目完成后改为 ../文章
-            self.output_dir = str(Path(__file__).resolve().parent / "测试文章")
+            self.output_dir = str(Path(__file__).resolve().parent / "文章")
         # 校验 source 名称（fail-fast）
         if _HAVE_SOURCES:
             validate_sources(self.sources)
@@ -150,7 +149,7 @@ def save_default_config(path: str = "config.yaml"):
         },
         "output": {
             "formats": ["md"],
-            "dir": "../测试文章",
+            "dir": "../文章",
         },
     }
     with open(path, "w", encoding="utf-8") as f:

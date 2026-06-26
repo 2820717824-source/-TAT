@@ -75,7 +75,7 @@ source_configs:
 - **结构化日志**：`run_state.py` TaskLogger 三流 JSONL（request_log/error_log/summary_log）
 - **知乎登录**：`python hotspot_crawler.py --login zhihu` 打开浏览器扫码，自动缓存 Cookie
 - **GitHub**：`https://github.com/2820717824-source/-TAT`
-- **默认输出目录**：`../测试文章`（TODO: 项目完成后切到 `../文章`）
+- **默认输出目录**：`../文章`
 
 ## 参考项目
 
