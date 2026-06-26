@@ -38,6 +38,7 @@ class FetchResult:
     status: str = "pending"  # pending | success | failed
     error_msg: str = ""
     crawl_time: float = 0.0
+    fallback: bool = False   # 是否从摘要回落（详情页获取失败时）
 
 
 class Fetcher:

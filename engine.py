@@ -96,6 +96,14 @@ class CrawlerEngine:
             result = self.fetcher.fetch(item.url, source=item.source, summary=item.summary)
             result.title = result.title or item.title
 
+            # 详情页获取失败时回落：保留列表页的摘要数据
+            if result.status == "failed" and item.summary:
+                result.content_markdown = item.summary
+                result.content_html = f"<p>{item.summary}</p>"
+                result.status = "success"
+                result.fallback = True
+                result.error_msg = ""
+
             self.saver.save(result, i)
             if result.status == "success":
                 report.success += 1

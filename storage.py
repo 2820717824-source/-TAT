@@ -91,6 +91,8 @@ class ArticleSaverV2:
             fm["author"] = result.author
         if result.summary:
             fm["summary"] = result.summary
+        if result.fallback:
+            fm["fallback"] = True
         if result.error_msg:
             fm["error"] = result.error_msg
         return fm
