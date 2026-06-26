@@ -38,6 +38,7 @@ class CrawlerConfig:
     dedup_enabled: bool = True
     resume: bool = True
     retry_failed: bool = True
+    proxy: bool = False       # 是否启用代理池（默认关闭）
     url_file: str | None = None
 
     def __post_init__(self):
@@ -79,6 +80,7 @@ def load_config(args: argparse.Namespace) -> CrawlerConfig:
     dedup_enabled = config_dict.get("dedup", {}).get("enabled", True)
     resume_enabled = config_dict.get("resume", {}).get("enabled", True)
     retry_failed = config_dict.get("resume", {}).get("retry_failed", True)
+    proxy_enabled = config_dict.get("proxy", {}).get("enabled", False)
 
     # 3. CLI 参数覆盖（显式传入的才覆盖）
     if args.keyword:
@@ -113,6 +115,7 @@ def load_config(args: argparse.Namespace) -> CrawlerConfig:
         output_dir=output_dir,
         dedup_enabled=dedup_enabled,
         resume=resume_enabled, retry_failed=retry_failed,
+        proxy=proxy_enabled,
         url_file=url_file,
     )
 
@@ -141,6 +144,9 @@ def save_default_config(path: str = "config.yaml"):
         "resume": {
             "enabled": True,
             "retry_failed": True,
+        },
+        "proxy": {
+            "enabled": False,
         },
         "output": {
             "formats": ["md"],
