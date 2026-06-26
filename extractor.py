@@ -184,11 +184,57 @@ def extract_paragraphs(html: str) -> ExtractorResult:
 
 
 # ============================================================
+# 提取器 4：微信文章（专用于 mp.weixin.qq.com）
+# ============================================================
+
+def extract_wechat(html: str, url: str = "") -> ExtractorResult:
+    """微信文章正文提取
+
+    微信文章使用自定义 HTML 结构，Readability 无法正常提取。
+    参考 wechat_articles_spider 项目：
+    - 标题在 <h2> 标签
+    - 正文在 class="rich_media_content"
+    - 图片使用 data-src 而非 src
+    - 时间戳在 ct = "..." JS 变量中
+    """
+    try:
+        soup = BeautifulSoup(html, "html.parser")
+
+        # 标题
+        title = ""
+        h2 = soup.find("h2")
+        if h2:
+            title = h2.get_text(strip=True)
+        if not title:
+            try:
+                title = html.split("<h2")[1].split("</h2")[0].split(">")[1].strip()
+            except (IndexError, AttributeError):
+                pass
+
+        # 正文
+        content_div = soup.find(class_="rich_media_content")
+        if not content_div:
+            return ExtractorResult(html="", extractor_name="wechat")
+
+        content_html = str(content_div)
+        # data-src → src（微信图片懒加载）
+        content_html = content_html.replace("data-src=", "src=")
+        # data-croporisrc → src
+        content_html = content_html.replace("data-croporisrc=", "src=")
+
+        result = score_content(content_html)
+        result.extractor_name = "wechat"
+        return result
+    except Exception:
+        return ExtractorResult(html="", extractor_name="wechat")
+
+
+# ============================================================
 # 清洗规则 DSL
 # ============================================================
 
 DEFAULT_RINSE_RULES = [
-    {"action": "remove", "selector": "script, style, noscript, iframe, svg, form, nav, header, footer" },
+    {"action": "remove", "selector": "script, style, noscript, iframe, svg, form, nav, header, footer"},
     {"action": "remove", "selector": "[role='navigation'], [role='banner'], [role='contentinfo']"},
     {"action": "remove", "selector": ".ad, .ads, .advertisement, .advert, .banner, .header, .footer"},
     {"action": "remove", "selector": "#ad, #ads, #advertisement, #banner, #footer, #header"},
@@ -238,10 +284,12 @@ def rinse(html: str, rules: list[dict] | None = None) -> str:
 
 def best_extraction(html: str, url: str = "") -> tuple[str, str, str]:
     """运行所有提取器，返回 (content_html, title, author)"""
+    is_wechat = "mp.weixin.qq.com" in url
     results = [
         extract_readability(html, url),
         extract_text_density(html),
         extract_paragraphs(html),
+        extract_wechat(html, url),
     ]
     valid = [r for r in results if r.html.strip() and r.score > 0]
 
@@ -252,7 +300,16 @@ def best_extraction(html: str, url: str = "") -> tuple[str, str, str]:
             return str(body), "", ""
         return "", "", ""
 
-    winner = max(valid, key=lambda r: r.score)
+    # 微信文章优先使用专用提取器（Readability 会提取到 UI 垃圾，分数虚高）
+    if is_wechat:
+        for r in results:
+            if r.extractor_name == "wechat" and r.score > 0:
+                winner = r
+                break
+        else:
+            winner = max(valid, key=lambda r: r.score)
+    else:
+        winner = max(valid, key=lambda r: r.score)
     # 对胜出内容施加清洗规则
     winner.html = rinse(winner.html)
 
@@ -265,5 +322,16 @@ def best_extraction(html: str, url: str = "") -> tuple[str, str, str]:
             author = doc.author() or ""
     except Exception:
         pass
+
+    # 微信文章的特殊提取
+    if is_wechat and not author:
+        try:
+            from bs4 import BeautifulSoup as _soup
+            _s = _soup(html, "html.parser")
+            _name = _s.find(id="js_name")
+            if _name:
+                author = _name.get_text(strip=True)
+        except Exception:
+            pass
 
     return winner.html, title, author
