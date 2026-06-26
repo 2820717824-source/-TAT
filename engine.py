@@ -21,6 +21,8 @@ sys.path.insert(0, '.')
 
 from run_state import TaskLogger, ResumeState
 from sources import HotItem
+from proxy_manager import ProxyProvider
+from sources import set_proxy_pool
 from rich.console import Console
 
 console = Console()
@@ -51,6 +53,14 @@ class CrawlerEngine:
         )
         self.logger = TaskLogger()
         self.resume_state = ResumeState() if config.resume else None
+
+        self.proxy_pool: ProxyProvider | None = None
+        if config.proxy:
+            self.proxy_pool = ProxyProvider()
+            set_proxy_pool(self.proxy_pool)
+            if not self.proxy_pool.available():
+                n = self.proxy_pool.refresh()
+                console.print(f"  [dim]代理池: 拉取到 {n} 个可用代理[/dim]")
 
     def run(self, hot_items) -> CrawlerReport:
         """执行全流程（接收外部传入的 hot_items 列表）"""
