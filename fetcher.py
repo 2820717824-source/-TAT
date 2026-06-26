@@ -151,8 +151,24 @@ class Fetcher:
         result = FetchResult(title="", url=url, source=source, summary=summary)
 
         try:
+            # 加载登录态的 Cookie（如有）
+            cookies = None
+            if "weibo.com" in url or "s.weibo" in url:
+                try:
+                    from cookie_manager import CookieManager
+                    c = CookieManager().load("weibo") or {}
+                    if c.get("cookie"):
+                        parsed = {}
+                        for pair in c["cookie"].split(";"):
+                            if "=" in pair:
+                                k, v = pair.split("=", 1)
+                                parsed[k.strip()] = v.strip()
+                        cookies = parsed
+                except ImportError:
+                    pass
+
             bf = BrowserFetcher(headless=True)
-            html = bf.fetch(url)
+            html = bf.fetch(url, cookies=cookies)
 
             if not html or len(html.strip()) < 200:
                 result.status = "failed"

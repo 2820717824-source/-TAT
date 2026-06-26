@@ -33,7 +33,14 @@ class WeiboHotSource(SearchSource):
 
     def search(self, keyword: str, max_results: int = 15) -> list[HotItem]:
         items = []
+        # 优先用 --login 缓存的 Cookie，其次用 config 配置
         cookie = self.config.get("cookie", "")
+        if not cookie:
+            try:
+                from cookie_manager import CookieManager
+                cookie = CookieManager().get_cookie_str("weibo") or ""
+            except ImportError:
+                pass
         try:
             headers = {
                 **default_headers("https://weibo.com/"),

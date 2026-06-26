@@ -540,6 +540,50 @@ def _login_zhihu():
         browser.close()
 
 
+def _login_weibo():
+    """打开 Playwright 浏览器让用户扫码登录微博，自动提取 Cookie"""
+    console.print("  [cyan]正在打开微博登录页...[/cyan]")
+    console.print("  [yellow]请用手机微博 App 扫码登录[/yellow]")
+    console.print("  [dim]等待登录中（最长 3 分钟）...[/dim]")
+
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        console.print("  [red]Playwright 未安装，请运行: pip install playwright && playwright install chromium[/red]")
+        sys.exit(1)
+
+    from cookie_manager import CookieManager
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch(
+            headless=False,
+            args=['--disable-blink-features=AutomationControlled'],
+        )
+        context = browser.new_context(
+            viewport={'width': 1280, 'height': 800},
+            locale='zh-CN',
+            timezone_id='Asia/Shanghai',
+        )
+        page = context.new_page()
+        page.goto("https://weibo.com/login.php", wait_until="networkidle")
+
+        import time
+        for _ in range(180):
+            time.sleep(1)
+            cookies = context.cookies()
+            login_cookies = [c for c in cookies if "weibo" in c["domain"]
+                            and c["name"] in ("SUB", "SUBP", "ALF", "SSOLoginState")]
+            if login_cookies:
+                cookie_str = "; ".join(f'{c["name"]}={c["value"]}' for c in cookies)
+                CookieManager().save("weibo", cookie_str)
+                console.print(f"  [green]登录成功！Cookie 已保存[/green]")
+                browser.close()
+                return
+
+        console.print("  [red]登录超时（3 分钟），请重试[/red]")
+        browser.close()
+
+
 # ============================================================
 # CLI 入口
 # ============================================================
@@ -552,6 +596,7 @@ def main():
 示例:
   python hotspot_crawler.py 健康
   python hotspot_crawler.py --login zhihu
+  python hotspot_crawler.py --login weibo
   python hotspot_crawler.py 人工智能 --max 10 --delay 3
   python hotspot_crawler.py 科技 --url-file urls.txt
         """,
@@ -595,8 +640,8 @@ def main():
     )
     parser.add_argument(
         "--login", type=str, default=None,
-        choices=["zhihu"],
-        help="登录指定平台并保存 Cookie（当前支持: zhihu）",
+        choices=["zhihu", "weibo"],
+        help="登录指定平台并保存 Cookie（当前支持: zhihu, weibo）",
     )
 
     args = parser.parse_args()
@@ -604,6 +649,8 @@ def main():
     if args.login:
         if args.login == "zhihu":
             _login_zhihu()
+        elif args.login == "weibo":
+            _login_weibo()
         sys.exit(0)
 
     if not args.keyword.strip():

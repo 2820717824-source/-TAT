@@ -21,7 +21,8 @@ class BrowserFetcher:
         self._playwright = None
         self._browser = None
 
-    def fetch(self, url: str, actions: list[dict] | None = None) -> str:
+    def fetch(self, url: str, actions: list[dict] | None = None,
+              cookies: dict[str, str] | None = None) -> str:
         """加载页面并返回渲染后的 HTML
 
         参考 image_crawler/crawler_engine.py L540-617:
@@ -31,6 +32,11 @@ class BrowserFetcher:
 
         参考 universal-crawler/browser_fetcher.py:
         - 动作脚本：click/scroll/wait
+
+        Parameters
+        ----------
+        cookies: dict[str, str] | None
+            注入的 Cookie，如 {"SUB": "xxx", "SUBP": "yyy"}
         """
         try:
             from playwright.sync_api import sync_playwright
@@ -88,6 +94,15 @@ class BrowserFetcher:
 
         page = context.new_page()
         page.set_default_timeout(self.timeout)
+
+        # 注入 Cookie（登录态）
+        if cookies:
+            import urllib.parse
+            domain = urllib.parse.urlparse(url).netloc
+            context.add_cookies([
+                {"name": k, "value": v, "domain": domain, "path": "/"}
+                for k, v in cookies.items()
+            ])
 
         page.goto(url, wait_until='networkidle', timeout=self.timeout)
 
