@@ -19,6 +19,17 @@ from dataclasses import dataclass
 from typing import Optional
 
 import requests
+from proxy_manager import ProxyProvider
+
+# 模块级代理池（由引擎在启动时设置）
+_proxy_pool: ProxyProvider | None = None
+
+
+def set_proxy_pool(pool: ProxyProvider | None) -> None:
+    """设置模块级代理池（引擎启动时调用）"""
+    global _proxy_pool
+    _proxy_pool = pool
+
 
 # ============================================================
 # 常量
@@ -66,24 +77,36 @@ def keyword_match(title: str, keyword: str) -> bool:
 def fetch_url(url: str, session: requests.Session, headers: dict = None,
               timeout: int = None, retry_times: int = 0,
               retry_backoff: float = 1.0,
-              retryable_status: list[int] | None = None) -> Optional[str]:
-    """通用 GET 请求，支持指数退避重试
+              retryable_status: list[int] | None = None,
+              proxy_pool: ProxyProvider | None = None) -> Optional[str]:
+    """通用 GET 请求，支持指数退避重试 + 代理轮换
 
     参考 universal-crawler fetcher.py L47-73 的重试模式：
     - retry_times=0: 不重试（兼容旧行为）
     - retry_times>0: 在 429/5xx 和网络错误时指数退避重试
-    - 401/403/404 等不重试（无意义）
+    - proxy_pool 提供时，失败后自动从池中换代理重试
     """
     if retryable_status is None:
         retryable_status = [429, 500, 502, 503, 504]
 
+    # 使用传入的 pool，没有则用模块级 pool
+    pool = proxy_pool or _proxy_pool
     last_error: str | None = None
+    current_proxy: str | None = None
+
     for attempt in range(retry_times + 1):
+        # 第一次失败后尝试用代理
+        if attempt > 0 and pool and pool.available():
+            current_proxy = pool.get_proxy()
+
+        proxies = {"http": current_proxy, "https": current_proxy} if current_proxy else None
+
         try:
             resp = session.get(
                 url,
                 headers=headers or default_headers(),
                 timeout=timeout or REQUEST_TIMEOUT,
+                proxies=proxies,
             )
             # 成功
             if resp.status_code == 200:
@@ -93,11 +116,15 @@ def fetch_url(url: str, session: requests.Session, headers: dict = None,
             # 可重试的状态码
             if resp.status_code in retryable_status:
                 last_error = f"HTTP {resp.status_code}"
+                if current_proxy:
+                    pool.report_failure(current_proxy)
             else:
                 # 401/403/404 等不重试
                 return None
         except requests.RequestException as e:
             last_error = str(e)
+            if current_proxy:
+                pool.report_failure(current_proxy)
 
         if attempt < retry_times:
             sleep_seconds = retry_backoff * (2 ** attempt) + random.random()
