@@ -18,10 +18,10 @@ from urllib.parse import urlparse
 import html2text
 import requests
 from bs4 import BeautifulSoup
-from readability import Document
 
 from config import CrawlerConfig
 from browser_fetcher import BrowserFetcher
+from extractor import best_extraction
 
 
 @dataclass
@@ -101,22 +101,16 @@ class Fetcher:
                 result.error_msg = "内容为空或过短"
                 return result
 
-            # Readability 正文提取
-            doc = Document(html, url=url)
-            doc.summary()
-            content_html = doc.content() or ""
-            title = doc.title() or ""
+            # 多提取器投票：并行运行所有提取器，评分选最优
+            content_html, title, author = best_extraction(html, url)
+            if not content_html or len(content_html.strip()) < 50:
+                result.status = "failed"
+                result.error_msg = "正文提取失败"
+                return result
 
             result.title = title
             result.content_html = content_html
-            result.author = doc.author() or ""
-
-            if not content_html or len(content_html.strip()) < 50:
-                result.content_html = self._fallback_extract(html)
-                if not result.content_html or len(result.content_html.strip()) < 50:
-                    result.status = "failed"
-                    result.error_msg = "正文提取失败"
-                    return result
+            result.author = author
 
             result.content_markdown = self.converter.handle(result.content_html)
 
@@ -165,22 +159,17 @@ class Fetcher:
                 result.error_msg = "浏览器渲染后内容为空"
                 return result
 
-            # Readability 正文提取（复用 requests 路径的相同逻辑）
-            doc = Document(html, url=url)
-            doc.summary()
-            content_html = doc.content() or ""
-            title = doc.title() or ""
+            # 多提取器投票（同 _requests_fetch 逻辑）
+            content_html, title, author = best_extraction(html, url)
 
             result.title = title
             result.content_html = content_html
-            result.author = doc.author() or ""
+            result.author = author
 
             if not content_html or len(content_html.strip()) < 50:
-                result.content_html = self._fallback_extract(html)
-                if not result.content_html or len(result.content_html.strip()) < 50:
-                    result.status = "failed"
-                    result.error_msg = "正文提取失败"
-                    return result
+                result.status = "failed"
+                result.error_msg = "正文提取失败"
+                return result
 
             result.content_markdown = self.converter.handle(result.content_html)
 
@@ -232,7 +221,9 @@ class Fetcher:
         return True
 
     def _fallback_extract(self, html: str) -> str:
-        """降级方案：BeautifulSoup 取文本最多的区域"""
+        """降级方案：BeautifulSoup 取文本最多的区域
+        已弃用：由 extractor.py 的 voting 系统替代，为向后兼容保留
+        """
         soup = BeautifulSoup(html, "html.parser")
         for tag in soup(["script", "style", "nav", "footer", "header", "aside", "noscript"]):
             tag.decompose()
