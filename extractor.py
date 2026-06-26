@@ -184,6 +184,55 @@ def extract_paragraphs(html: str) -> ExtractorResult:
 
 
 # ============================================================
+# 清洗规则 DSL
+# ============================================================
+
+DEFAULT_RINSE_RULES = [
+    {"action": "remove", "selector": "script, style, noscript, iframe, svg, form, nav, header, footer" },
+    {"action": "remove", "selector": "[role='navigation'], [role='banner'], [role='contentinfo']"},
+    {"action": "remove", "selector": ".ad, .ads, .advertisement, .advert, .banner, .header, .footer"},
+    {"action": "remove", "selector": "#ad, #ads, #advertisement, #banner, #footer, #header"},
+    {"action": "remove", "selector": "[class*=sidebar], [class*=related], [class*=recommend]"},
+    {"action": "remove", "selector": "[class*=comment], [id*=comment]"},
+    {"action": "strip_attrs", "selector": "a", "keep": ["href"]},
+    {"action": "strip_attrs", "selector": "img", "keep": ["src", "alt"]},
+]
+
+
+def rinse(html: str, rules: list[dict] | None = None) -> str:
+    """应用 JSON DSL 清洗规则到 HTML 内容
+
+    规则格式:
+        {"action": "remove", "selector": "css选择器"}          — 删除匹配元素
+        {"action": "strip_attrs", "selector": "css", "keep": ["href"]}  — 保留指定属性
+    """
+    if not html.strip():
+        return html
+    try:
+        soup = BeautifulSoup(html, "html.parser")
+        for rule in rules or DEFAULT_RINSE_RULES:
+            action = rule.get("action")
+            selector = rule.get("selector", "")
+            if not selector:
+                continue
+            try:
+                if action == "remove":
+                    for tag in soup.select(selector):
+                        tag.decompose()
+                elif action == "strip_attrs":
+                    keep = set(rule.get("keep", []))
+                    for tag in soup.select(selector):
+                        for attr in list(tag.attrs):
+                            if attr not in keep:
+                                del tag.attrs[attr]
+            except Exception:
+                continue
+        return str(soup)
+    except Exception:
+        return html
+
+
+# ============================================================
 # 编排器
 # ============================================================
 
@@ -204,6 +253,8 @@ def best_extraction(html: str, url: str = "") -> tuple[str, str, str]:
         return "", "", ""
 
     winner = max(valid, key=lambda r: r.score)
+    # 对胜出内容施加清洗规则
+    winner.html = rinse(winner.html)
 
     # 从 Readability 提取标题和作者
     title, author = "", ""
