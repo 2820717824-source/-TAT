@@ -33,6 +33,9 @@
 | 知乎热榜 | zhihu | 是（`--login zhihu` 扫码登录 或 source_configs.zhihu.cookie） |
 | 必应搜索 | bing | 否 |
 | 微博热搜 | weibo | 否（可选填提高成功率） |
+| 今日头条 | toutiao | 否 |
+| 360 搜索 | 360 | 否 |
+| 抖音热点 | douyin | 否 |
 
 新增源只需：在 `sources/` 下新建文件 → 类加 `@register_source` → 自动注册（importlib 扫描）。
 

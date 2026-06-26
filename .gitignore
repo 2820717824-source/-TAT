@@ -11,6 +11,10 @@ build/
 
 # Output articles
 测试文章/
+文章/
+
+# URL to markdown cache
+url-to-markdown/
 
 # Superpowers workflow
 .superpowers/

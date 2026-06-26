@@ -43,7 +43,7 @@ class CrawlerConfig:
 
     def __post_init__(self):
         if self.sources is None:
-            self.sources = ["baidu", "zhihu", "bing", "weibo"]
+            self.sources = ["baidu", "zhihu", "bing", "weibo", "toutiao", "360", "douyin"]
         if self.source_configs is None:
             self.source_configs = {}
         if self.output_formats is None:
