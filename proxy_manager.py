@@ -51,7 +51,7 @@ class ProxyProvider:
 
         If pool is empty and cache is expired, triggers a refresh.
         """
-        if not self._proxies and self._cache_expired():
+        if not self._proxies:
             self.refresh()
         if not self._proxies:
             return None
@@ -93,10 +93,11 @@ class ProxyProvider:
         for i, proxy in enumerate(self._proxies):
             if proxy["addr"] == proxy_addr:
                 proxy["fail_count"] += 1
-                if proxy["fail_count"] >= MAX_FAIL_COUNT:
+                fail_count = proxy["fail_count"]
+                if fail_count >= MAX_FAIL_COUNT:
                     self._proxies.pop(i)
                     logger.debug("Removed proxy %s (fail_count=%d)",
-                                 proxy_addr, proxy["fail_count"])
+                                 proxy_addr, fail_count)
                 break
 
     def available(self) -> bool:
